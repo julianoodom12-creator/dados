@@ -1,0 +1,243 @@
+<meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Análise OSINT Avançado</title>
+    <style>
+        body {
+            background-color: #0d1117;
+            color: #c9d1d9;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 24px;
+        }
+        h1 {
+            color: #58a6ff;
+            font-size: 24px;
+            border-bottom: 1px solid #30363d;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            flex: 1;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            padding: 10px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #238636;
+            color: #ffffff;
+            border: 1px solid rgba(240,246,252,0.1);
+            border-radius: 6px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        button:hover {
+            background-color: #2ea44f;
+        }
+        button.btn-export {
+            background-color: #21262d;
+            border: 1px solid #30363d;
+            color: #58a6ff;
+            margin-top: 15px;
+        }
+        button.btn-export:hover {
+            background-color: #30363d;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .card {
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 16px;
+        }
+        .card h3 {
+            margin-top: 0;
+            color: #f0f6fc;
+            border-bottom: 1px solid #30363d;
+            padding-bottom: 8px;
+        }
+        .output-log {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 13px;
+            color: #7ee787;
+            min-height: 80px;
+            white-space: pre-wrap;
+        }
+        .meta-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .meta-table td {
+            padding: 6px 0;
+            border-bottom: 1px solid #30363d;
+            font-size: 14px;
+        }
+        .meta-table td.label {
+            color: #8b949e;
+            width: 40%;
+        }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Terminal de Inteligência de Fontes Abertas (OSINT)</h1>
+    <p>Insira o número de telefone com DDD (apenas números) para executar a triagem estruturada e dorking de superfície.</p>
+    
+    <div class="search-box">
+        <input type="text" id="target" placeholder="Exemplo: 11999999999">
+        <button onclick="executarPesquisa()">Pesquisar Alvo</button>
+    </div>
+
+    <div class="grid" style="grid-template-columns: 1fr; margin-top: 0;">
+        <div class="card">
+            <h3>Triagem Inicial (Prefixos ANATEL Nativos)</h3>
+            <table class="meta-table">
+                <tr><td class="label">Estado / Região:</td><td id="metaRegiao">Nenhum dado</td></tr>
+                <tr><td class="label">Tipo de Terminal:</td><td id="metaTipo">Nenhum dado</td></tr>
+                <tr><td class="label">Validação de Formato:</td><td id="metaValido">Inativo</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 20px;">
+        <h3>Status da Execução</h3>
+        <div class="output-log" id="logTerminal">Aguardando coordenadas para iniciar varredura...</div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h3>Pontes de Busca e Redes Sociais</h3>
+            <ul id="redesLista">
+                <li>Aguardando consulta...</li>
+            </ul>
+        </div>
+        <div class="card">
+            <h3>Indexações Públicas Coletadas</h3>
+            <ul id="mencoesLista">
+                <li>Aguardando consulta...</li>
+            </ul>
+        </div>
+    </div>
+
+    <button class="btn-export" id="btnExport" style="display:none;" onclick="exportarRelatorio()">Exportar Relatório (.MD)</button>
+</div>
+
+<script>
+    // Dicionário estático básico de DDDs do Brasil (ANATEL)
+    const dddMap = {
+        '11': 'São Paulo (Região Metropolitana)', '12': 'São Paulo (Vale do Paraíba)', '13': 'São Paulo (Baixada Santista)', '14': 'São Paulo (Bauru/Marília)', '15': 'São Paulo (Sorocaba/Itapetininga)', '16': 'São Paulo (Ribeirão Preto/Franca)', '17': 'São Paulo (São José do Rio Preto)', '18': 'São Paulo (Presidente Prudente/Araçatuba)', '19': 'São Paulo (Campinas/Piracicaba)',
+        '21': 'Rio de Janeiro (Região Metropolitana)', '22': 'Rio de Janeiro (Interior)', '24': 'Rio de Janeiro (Região Serrana/Sul)',
+        '27': 'Espírito Santo (Vitória/Central)', '28': 'Espírito Santo (Sul)',
+        '31': 'Minas Gerais (Belo Horizonte)', '32': 'Minas Gerais (Juiz de Fora)', '33': 'Minas Gerais (Governador Valadares)', '34': 'Minas Gerais (Uberlândia/Triângulo)', '35': 'Minas Gerais (Poços de Caldas/Sul)', '37': 'Minas Gerais (Divinópolis)', '38': 'Minas Gerais (Montes Claros)',
+        '41': 'Paraná (Curitiba)', '42': 'Paraná (Ponta Grossa)', '43': 'Paraná (Londrina)', '44': 'Paraná (Maringá)', '45': 'Paraná (Cascavel)', '46': 'Paraná (Francisco Beltrão)',
+        '47': 'Santa Catarina (Joinville)', '48': 'Santa Catarina (Florianópolis)', '49': 'Santa Catarina (Chapecó)',
+        '51': 'Rio Grande do Sul (Porto Alegre)', '53': 'Rio Grande do Sul (Pelotas)', '54': 'Rio Grande do Sul (Caxias do Sul)', '55': 'Rio Grande do Sul (Santa Maria)',
+        '61': 'Distrito Federal / Entorno', '62': 'Goiás (Goiânia)', '64': 'Goiás (Rio Verde)', '63': 'Tocantins', '65': 'Mato Grosso (Cuiabá)', '66': 'Mato Grosso (Interior)', '67': 'Mato Grosso do Sul', '68': 'Acre', '69': 'Rondônia',
+        '71': 'Bahia (Salvador)', '73': 'Bahia (Ilhéus)', '74': 'Bahia (Juazeiro)', '75': 'Bahia (Feira de Santana)', '77': 'Bahia (Barreiras)', '79': 'Sergipe',
+        '81': 'Pernambuco (Recife)', '82': 'Alagoas', '83': 'Paraíba', '84': 'Rio Grande do Norte', '85': 'Ceará (Fortaleza)', '88': 'Ceará (Interior)', '86': 'Piauí (Teresina)', '89': 'Piauí (Interior)',
+        '91': 'Pará (Belém)', '93': 'Pará (Santarém)', '94': 'Pará (Marabá)', '92': 'Amazonas (Manaus)', '97': 'Amazonas (Interior)', '95': 'Roraima', '96': 'Amapá', '98': 'Maranhão (São Luís)', '99': 'Maranhão (Imperatriz)'
+    };
+
+    let dadosUltimaPesquisa = null;
+
+    function analisarFisicamente(num) {
+        const ddd = num.substring(0, 2);
+        const corpo = num.substring(2);
+        
+        let regiao = dddMap[ddd] || "DDI Externo ou DDD Inválido";
+        let tipo = "Desconhecido";
+        
+        if (corpo.length === 9 && corpo.startsWith('9')) {
+            tipo = "Celular (Móvel)";
+        } else if (corpo.length === 8 && ['2', '3', '4', '5'].includes(corpo[0])) {
+            tipo = "Fixo (Cabeado)";
+        }
+
+        document.getElementById('metaRegiao').innerText = regiao;
+        document.getElementById('metaTipo').innerText = tipo;
+        document.getElementById('metaValido').innerText = (num.length >= 10 && num.length <= 11) ? "Válido" : "Inconsistente";
+        
+        return { regiao, tipo };
+    }
+
+    async function executarPesquisa() {
+        const alvo = document.getElementById('target').value.replace(/\D/g, '');
+        const log = document.getElementById('logTerminal');
+        
+        if(alvo.length < 10) {
+            alert('Insira um número válido contendo DDD + Número.');
+            return;
+        }
+
+        const triagem = analisarFisicamente(alvo);
+
+        log.innerText = `[+] Iniciando requisição ao motor OSINT...\n`;
+        log.innerText += `[+] Alvo estruturado: ${alvo}\n`;
+        log.innerText += `[+] Região mapeada por prefixo: ${triagem.regiao}\n`;
+        log.innerText += `[+] Consultando indexadores públicos de rede...`;
+
+        try {
+            const resposta = await fetch(`http://127.0.0{alvo}`);
+            const dados = await resposta.json();
+
+            if (dados.erro) {
+                log.innerText += `\n[-] Erro no processamento do Backend: ${dados.erro}`;
+                return;
+            }
+
+            log.innerText += `\n[+] Varredura concluída. ${dados.resultados.length} menções diretas encontradas.`;
+            
+            dadosUltimaPesquisa = {
+                telefone: alvo,
+                triagem: triagem,
+                mencoes: dados.resultados
+            };
+
+            // Renderizar Listas
+            const mencoesLista = document.getElementById('mencoesLista');
+            mencoesLista.innerHTML = '';
+            
+            if(dados.resultados.length === 0) {
+                mencoesLista.innerHTML = '<li>Nenhuma indexação textual explícita encontrada na superfície limpa.</li>';
+            } else {
+                dados.resultados.forEach(item => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<a href="${item.link}" target="_blank">${item.titulo}</a><br><small style="color:#8b949e">${item.snippet}</small><br><br>`;
+                    mencoesLista.appendChild(li);
+                });
+            }
+
+            const redesLista = document.getElementById('redesLista');
